@@ -31,97 +31,52 @@ LinearAlgebra.adjoint(A::UniformScalingMap)   = UniformScalingMap(conj(A.λ), si
 Base.:(*)(α::Number, J::UniformScalingMap) = UniformScalingMap(α * J.λ, size(J))
 Base.:(*)(J::UniformScalingMap, α::Number) = UniformScalingMap(J.λ * α, size(J))
 
-# multiplication with vector
-Base.:(*)(A::UniformScalingMap, x::AbstractVector) =
-    length(x) == A.M ? A.λ * x : throw(DimensionMismatch("mul!"))
-
-if VERSION < v"1.3.0-alpha.115"
-Base.@propagate_inbounds function LinearAlgebra.mul!(y::AbstractVector, A::UniformScalingMap, x::AbstractVector)
-    @boundscheck check_dim_mul(y, A, x)
-    if iszero(A.λ)
-        return fill!(y, zero(eltype(y)))
-    elseif isone(A.λ)
-        return copyto!(y, x)
-    else
-        # call of LinearAlgebra.generic_mul! since order of arguments in mul! in
-        # stdlib/LinearAlgebra/src/generic.jl reversed
-        return LinearAlgebra.generic_mul!(y, A.λ, x)
+# multiplication with vector/matrix
+for Atype in (AbstractVector, AbstractMatrix)
+    @eval Base.@propagate_inbounds function LinearAlgebra.mul!(y::$Atype, J::UniformScalingMap, x::$Atype,
+                α::Number=true, β::Number=false)
+        @boundscheck check_dim_mul(y, J, x)
+        _scaling!(y, J.λ, x, α, β)
+        return y
     end
 end
 
-end # VERSION
-
-Base.@propagate_inbounds function LinearAlgebra.mul!(y::AbstractVector, J::UniformScalingMap, x::AbstractVector,
-                    α::Number=true, β::Number=false)
-    @boundscheck check_dim_mul(y, J, x)
-    _scaling!(y, J.λ, x, α, β)
-    return y
-end
-
-Base.@propagate_inbounds function LinearAlgebra.mul!(Y::AbstractMatrix, J::UniformScalingMap, X::AbstractMatrix,
-                    α::Number=true, β::Number=false)
-    @boundscheck check_dim_mul(Y, J, X)
-    _scaling!(Y, J.λ, X, α, β)
-    return Y
-end
-
-function _scaling!(y, λ::Number, x, α::Number=true, β::Number=false)
-    if isone(α)
-        if iszero(β)
-            iszero(λ) && return fill!(y, zero(eltype(y)))
-            isone(λ) && return copyto!(y, x)
-            y .= λ .* x
-            return y
-        elseif isone(β)
-            iszero(λ) && return y
-            isone(λ) && return y .+= x
-            y .+= λ .* x
-            return y
-        else # β != 0, 1
-            iszero(λ) && (rmul!(y, β); return y)
-            isone(λ) && (y .= y .* β .+ x; return y)
-            y .= y .* β .+ λ .* x
-            return y
-        end
-    elseif iszero(α)
+function _scaling!(y, λ::Number, x, α::Number, β::Number)
+    if (iszero(α) || iszero(λ))
         iszero(β) && (fill!(y, zero(eltype(y))); return y)
         isone(β) && return y
         # β != 0, 1
         rmul!(y, β)
         return y
+    elseif isone(α)
+        if iszero(β)
+            isone(λ) && return copyto!(y, x)
+            y .= λ .* x
+            return y
+        elseif isone(β)
+            isone(λ) && return y .+= x
+            y .+= λ .* x
+            return y
+        else # β != 0, 1
+            isone(λ) && (axpby!(one(eltype(x)), x, β, y); return y)
+            y .= y .* β .+ λ .* x
+            return y
+        end
     else # α != 0, 1
         if iszero(β)
-            iszero(λ) && return fill!(y, zero(eltype(y)))
-            isone(λ) && return y .= x .* α
+            isone(λ) && (y .= x .* α; return y)
             y .= λ .* x .* α
             return y
         elseif isone(β)
-            iszero(λ) && return y
-            isone(λ) && return y .+= x .* α
+            isone(λ) && (axpby!(α, x, β, y); return y)
             y .+= λ .* x .* α
             return y
         else # β != 0, 1
-            iszero(λ) && (rmul!(y, β); return y)
-            isone(λ) && (y .= y .* β .+ x .* α; return y)
             y .= y .* β .+ λ .* x .* α
             return y
-        end
-    end
-end
-
-Base.@propagate_inbounds LinearAlgebra.mul!(y::AbstractVector, A::TransposeMap{<:Any,<:UniformScalingMap}, x::AbstractVector,
-                    α::Number=true, β::Number=false) =
-    mul!(y, transpose(A), x, α, β)
-Base.@propagate_inbounds LinearAlgebra.mul!(y::AbstractVector, A::AdjointMap{<:Any,<:UniformScalingMap}, x::AbstractVector,
-                    α::Number=true, β::Number=false) =
-    mul!(y, adjoint(A), x, α, β)
-
-Base.@propagate_inbounds LinearAlgebra.mul!(y::AbstractMatrix, A::TransposeMap{<:Any,<:UniformScalingMap}, x::AbstractMatrix,
-                    α::Number=true, β::Number=false) =
-    mul!(y, transpose(A), x, α, β)
-Base.@propagate_inbounds LinearAlgebra.mul!(y::AbstractMatrix, A::AdjointMap{<:Any,<:UniformScalingMap}, x::AbstractMatrix,
-                    α::Number=true, β::Number=false) =
-    mul!(y, adjoint(A), x, α, β)
+        end # β-cases
+    end # α-cases
+end # function _scaling!
 
 # combine LinearMap and UniformScaling objects in linear combinations
 Base.:(+)(A₁::LinearMap, A₂::UniformScaling) = A₁ + UniformScalingMap(A₂.λ, size(A₁, 1))
