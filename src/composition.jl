@@ -144,7 +144,7 @@ Base.@propagate_inbounds function LinearAlgebra.mul!(y::AbstractVector, A::Compo
                     rethrow(err)
                 end
             end
-            mul!(dest, A.maps[n], source, true, false)
+            mul!(dest, A.maps[n], source)
             dest, source = source, dest # alternate dest and source
         end
         mul!(y, A.maps[N], source, true, β)
