@@ -78,6 +78,7 @@ for Atype in (AbstractVector, AbstractMatrix)
             mul!(y, first(A.maps), x, α, β)
             return _mul!(MulStyle(A), y, A, x, α, β)
         end
+        return y
     end
 end
 
@@ -102,7 +103,6 @@ end
     else
         y .+= z .* α
     end
-    return y
 end
 
 A_mul_B!(y::AbstractVector, A::LinearCombination, x::AbstractVector) = mul!(y, A, x)
