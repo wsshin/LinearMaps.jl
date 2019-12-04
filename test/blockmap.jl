@@ -1,4 +1,4 @@
-using Test, LinearMaps, LinearAlgebra
+using Test, LinearMaps, LinearAlgebra, BenchmarkTools
 
 @testset "block maps" begin
     @testset "hcat" begin
@@ -141,6 +141,30 @@ using Test, LinearMaps, LinearAlgebra
             @test Lt isa LinearMaps.LinearMap{elty}
             @test Lt * x ≈ transform(A) * x
             @test Matrix(Lt) ≈ Matrix(transform(A))
+        end
+    end
+
+    @testset "function block map" begin
+        CS! = LinearMap{ComplexF64}(cumsum!,
+                                    (y, x) -> (copyto!(y, x); reverse!(y); cumsum!(y, y); reverse!(y)), 10;
+                                    ismutating=true)
+        A = rand(ComplexF64, 10, 10)
+        B = rand(10, 10)
+        L = [CS! LinearMap(A); LinearMap(B) CS!]
+        M = [Matrix(CS!) A; B Matrix(CS!)]
+        u = rand(ComplexF64, 20)
+        v = rand(ComplexF64, 20)
+        for α in (false, true, rand(ComplexF64)), β in (false, true, rand(ComplexF64))
+            for transform in (identity, adjoint)
+                @test mul!(copy(v), transform(L), u, α, β) ≈ transform(M)*u*α + v*β
+                @test mul!(copy(v), transform(LinearMap(L)), u, α, β) ≈ transform(M)*u*α + v*β
+                @test mul!(copy(v), LinearMap(transform(L)), u, α, β) ≈ transform(M)*u*α + v*β
+                # bmap = @benchmarkable mul!($(copy(v)), $(transform(L)), $u, $α, $β)
+                # bmat = @benchmarkable mul!($(copy(v)), $(transform(Lmat)), $u, $α, $β)
+                # @show run(bmap, samples=3).allocs
+                # @show run(bmat, samples=3).allocs
+                # @test run(blm, samples=3).allocs <= 1
+            end
         end
     end
 end
